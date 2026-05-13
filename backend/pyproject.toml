@@ -26,3 +26,7 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["agents", "utils"]
 
+# Vercel Python runtime: load FastAPI `app` from main.py when Root Directory = backend
+[tool.vercel]
+entrypoint = "main:app"
+
