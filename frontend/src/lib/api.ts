@@ -1,24 +1,60 @@
 import axios, { AxiosError } from "axios";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+/**
+ * Browser → backend:
+ * - Direct: NEXT_PUBLIC_API_URL=https://….up.railway.app (Railway public URL).
+ * - On Vercel without that var: same-origin /api if BACKEND_URL is set (see next.config.ts rewrites).
+ * - Explicit proxy: NEXT_PUBLIC_API_URL=same-origin + BACKEND_URL on Vercel.
+ * OpenAI / NewsAPI keys belong only on Railway — never in NEXT_PUBLIC_*.
+ */
+function normalizeBase(url: string): string {
+  return url.replace(/\/$/, "");
+}
+
+export function getApiBaseUrl(): string {
+  const explicit = (process.env.NEXT_PUBLIC_API_URL ?? "").trim();
+  const onVercel = process.env.VERCEL === "1";
+  if (explicit && explicit.toLowerCase() !== "same-origin") {
+    return normalizeBase(explicit);
+  }
+  const useSameOrigin =
+    explicit.toLowerCase() === "same-origin" || (!explicit && onVercel);
+
+  if (useSameOrigin) {
+    if (typeof window !== "undefined") {
+      return "";
+    }
+    const internal = (
+      process.env.BACKEND_URL ||
+      process.env.RAILWAY_BACKEND_URL ||
+      ""
+    ).trim();
+    if (internal) return normalizeBase(internal);
+    return "http://localhost:8000";
+  }
+
+  if (typeof window !== "undefined") {
+    return "http://localhost:8000";
+  }
+  const internal = (
+    process.env.BACKEND_URL ||
+    process.env.RAILWAY_BACKEND_URL ||
+    ""
+  ).trim();
+  if (internal) return normalizeBase(internal);
+  return "http://localhost:8000";
+}
 
 export const api = axios.create({
-  baseURL: API_URL,
+  baseURL: "",
   timeout: 120_000,
   headers: { "Content-Type": "application/json" },
 });
 
-if (
-  typeof window !== "undefined" &&
-  window.location.hostname.includes("vercel.app") &&
-  !process.env.NEXT_PUBLIC_API_URL
-) {
-  console.error(
-    "NEXT_PUBLIC_API_URL is not set. Add it in Vercel → Environment Variables.",
-    "Current API URL:",
-    API_URL
-  );
-}
+api.interceptors.request.use((config) => {
+  config.baseURL = getApiBaseUrl();
+  return config;
+});
 
 export interface AgentResponse {
   result: string;
@@ -123,7 +159,7 @@ export async function getLiveNews(
       /Invalid OpenAI API key|Error running agent/i.test(msg) &&
       !/live_news.?rss/i.test(msg)
     ) {
-      const base = API_URL.replace(/\/$/, "");
+      const base = getApiBaseUrl().replace(/\/$/, "") || window.location.origin;
       msg += ` Live News does not use OpenAI (RSS + optional NewsAPI only). This error usually means the app is hitting an old backend. Stop all uvicorn/python on port 8000, restart from the backend folder, then open ${base}/health — you should see "live_news":"rss".`;
     }
     throw new Error(msg);
@@ -148,8 +184,12 @@ export async function postUltimateNews(body: {
 }
 
 export function assetUrl(kind: "pdf" | "audio" | "graph", filename: string) {
-  const base = API_URL.replace(/\/$/, "");
-  if (kind === "pdf") return `${base}/api/download-pdf/${encodeURIComponent(filename)}`;
-  if (kind === "audio") return `${base}/api/download-audio/${encodeURIComponent(filename)}`;
-  return `${base}/api/download-graph/${encodeURIComponent(filename)}`;
+  const base = normalizeBase(getApiBaseUrl() || (typeof window !== "undefined" ? window.location.origin : ""));
+  const path =
+    kind === "pdf"
+      ? `/api/download-pdf/${encodeURIComponent(filename)}`
+      : kind === "audio"
+        ? `/api/download-audio/${encodeURIComponent(filename)}`
+        : `/api/download-graph/${encodeURIComponent(filename)}`;
+  return base ? `${base}${path}` : path;
 }

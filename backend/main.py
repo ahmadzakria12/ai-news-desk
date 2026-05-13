@@ -58,11 +58,26 @@ async def lifespan(app: FastAPI):
     yield
 
 
-frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
-is_production = os.getenv("ENVIRONMENT") == "production" or os.getenv("VERCEL") == "1"
+def _cors_normalize_origin(url: str) -> str:
+    """Browser Origin header has no path; strip whitespace and trailing slashes."""
+    return (url or "").strip().rstrip("/")
+
+
+frontend_url = _cors_normalize_origin(os.getenv("FRONTEND_URL", "http://localhost:3000"))
+# Railway never sets VERCEL; without this, "production-only" branches below misbehave.
+is_production = (
+    os.getenv("ENVIRONMENT") == "production"
+    or os.getenv("VERCEL") == "1"
+    or os.getenv("RAILWAY_ENVIRONMENT") == "production"
+    or os.getenv("RAILWAY_ENVIRONMENT") == "preview"
+)
 
 # CORS: default production = registered origins only (SRS). Set CORS_ALLOW_ALL=1 to allow "*".
-_extra_origins = [o.strip() for o in os.getenv("CORS_EXTRA_ORIGINS", "").split(",") if o.strip()]
+_extra_origins = [
+    _cors_normalize_origin(o)
+    for o in os.getenv("CORS_EXTRA_ORIGINS", "").split(",")
+    if o.strip()
+]
 allowed_origins = list(
     dict.fromkeys(
         [
@@ -77,6 +92,17 @@ allowed_origins = list(
 )
 _cors_allow_all = os.getenv("CORS_ALLOW_ALL", "").strip() == "1"
 
+# Vercel preview deploys use https://<project>-<hash>.vercel.app (not only production URL).
+_vercel_regex_env = os.getenv("CORS_VERCEL_REGEX", "").strip()
+if _vercel_regex_env.lower() in ("0", "false", "no", "off"):
+    _cors_vercel_regex: Optional[str] = None
+elif _vercel_regex_env:
+    _cors_vercel_regex = _vercel_regex_env
+elif "vercel.app" in frontend_url:
+    _cors_vercel_regex = r"https://.*\.vercel\.app"
+else:
+    _cors_vercel_regex = None
+
 app = FastAPI(
     title="AI News API",
     description="AI News Backend with OpenAI Agents SDK",
@@ -84,35 +110,30 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+_cors_common = dict(
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=3600,
+)
+
 if is_production and not _cors_allow_all:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=allowed_origins,
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-        allow_headers=["*"],
-        expose_headers=["*"],
-        max_age=3600,
-    )
+    _cors_kw = {**_cors_common, "allow_origins": allowed_origins, "allow_credentials": True}
+    if _cors_vercel_regex:
+        _cors_kw["allow_origin_regex"] = _cors_vercel_regex
+    app.add_middleware(CORSMiddleware, **_cors_kw)
 elif is_production and _cors_allow_all:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
         allow_credentials=False,
-        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-        allow_headers=["*"],
-        expose_headers=["*"],
-        max_age=3600,
+        **_cors_common,
     )
 else:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=allowed_origins,
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-        allow_headers=["*"],
-        expose_headers=["*"],
-    )
+    _cors_kw = {**_cors_common, "allow_origins": allowed_origins, "allow_credentials": True}
+    if _cors_vercel_regex:
+        _cors_kw["allow_origin_regex"] = _cors_vercel_regex
+    app.add_middleware(CORSMiddleware, **_cors_kw)
 
 # Request/Response models
 class AgentRequest(BaseModel):
