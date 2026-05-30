@@ -72,11 +72,6 @@ export function UltimateNewsPanel() {
         <h2 className="text-3xl md:text-4xl font-bold text-white mb-3">
           Ultimate AI News (PDF / Audio / Graph)
         </h2>
-        <p className="text-white/60 max-w-2xl mb-8">
-          Calls <code className="text-purple-300/90">POST /api/ultimate-news</code>{" "}
-          and surfaces download links for generated assets.
-        </p>
-
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-1 space-y-4">
             <div className="glass-strong border border-white/10 rounded-xl p-4">

@@ -79,9 +79,7 @@ export function MultiAgentNewsPanel() {
           Ask multiple agents at once
         </h2>
         <p className="text-white/60 max-w-2xl mb-8">
-          Select agents, enter a query, and the backend runs{" "}
-          <code className="text-cyan-300/90">POST /api/news</code> to return a
-          combined digest.
+          Select agents, enter a query, and the run to return a combined digest.
         </p>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
