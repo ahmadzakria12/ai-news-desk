@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel
 from typing import Optional, List, Tuple
+from datetime import datetime, timezone
 import os
 import asyncio
 from dotenv import load_dotenv
@@ -270,6 +271,27 @@ def http_exc_from_agent_error(exc: Exception) -> HTTPException:
     return HTTPException(status_code=500, detail=msg)
 
 
+def _freshness_prefix(scope: str = "news") -> str:
+    """Explicitly bias agents to current items and away from stale archives."""
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    if scope == "breaking":
+        window = "last 24 hours"
+    elif scope == "research":
+        window = "last 7 days unless the user explicitly asks for historical context"
+    else:
+        window = "last 24-72 hours"
+    return (
+        f"Current time: {now}. Prioritize verified AI updates from {window}. "
+        "Avoid stale items (for example 2023) unless explicitly requested."
+    )
+
+
+def _fresh_query(query: str, scope: str = "news") -> str:
+    base = (query or "").strip()
+    prefix = _freshness_prefix(scope)
+    return f"{prefix}\n\nUser request: {base}" if base else prefix
+
+
 # Initialize all agents
 seo_agent = SEOAgent()
 youtube_agent = YouTubeAgent()
@@ -337,9 +359,13 @@ async def run_agent(request: AgentRequest):
             )
 
         agent = agent_map[agent_key]
+        scoped_query = _fresh_query(
+            request.query,
+            scope="research" if agent_key == "news_research" else "news",
+        )
         result = await agent_runner.run_async(
             agent=agent,
-            query=request.query,
+            query=scoped_query,
             session_id=request.session_id,
             use_memory=True,
         )
@@ -393,7 +419,7 @@ async def get_news(request: NewsRequest):
             agent = agent_map[agent_key]
             result = await agent_runner.run_async(
                 agent=agent,
-                query=request.query,
+                query=_fresh_query(request.query, scope="news"),
                 session_id=session_id,
                 use_memory=False,
             )
@@ -422,7 +448,10 @@ async def get_daily_news(request: DailyNewsRequest):
     """Get daily news collection on specified topics"""
     try:
         topics = request.topics or ["ai", "crypto", "politics", "health", "pakistan", "sports"]
-        query = f"Collect today's news on these topics: {', '.join(topics)}"
+        query = _fresh_query(
+            f"Collect today's news on these topics: {', '.join(topics)}",
+            scope="news",
+        )
         ok, reason = check_input(query)
         if not ok:
             raise HTTPException(status_code=400, detail=reason)
@@ -448,7 +477,10 @@ async def get_daily_news(request: DailyNewsRequest):
 async def get_breaking_news(request: BreakingNewsRequest):
     """Get breaking news alerts"""
     try:
-        query = request.query or "Check for breaking news and high-impact events"
+        query = _fresh_query(
+            request.query or "Check for breaking news and high-impact events",
+            scope="breaking",
+        )
         ok, reason = check_input(query)
         if not ok:
             raise HTTPException(status_code=400, detail=reason)
@@ -479,7 +511,10 @@ async def research_topic(request: ResearchRequest):
             raise HTTPException(status_code=400, detail=reason)
         result = await agent_runner.run_async(
             agent=news_research,
-            query=f"Research this topic in detail: {request.topic}",
+            query=_fresh_query(
+                f"Research this topic in detail: {request.topic}",
+                scope="research",
+            ),
             session_id=request.session_id,
             use_memory=False,
         )
@@ -529,7 +564,7 @@ async def newsroom_system(request: NewsroomRequest):
             raise HTTPException(status_code=400, detail=reason)
         result = await agent_runner.run_async(
             agent=multi_agent_newsroom,
-            query=request.query,
+            query=_fresh_query(request.query, scope="news"),
             session_id=request.session_id,
             use_memory=False,
         )
@@ -566,7 +601,10 @@ async def ultimate_news_agent(request: UltimateNewsRequest):
         else:
             language_note = " Write the entire news digest in English only."
 
-        query = f"{request.query}\n\nUse features: {', '.join(features)}{language_note}"
+        query = _fresh_query(
+            f"{request.query}\n\nUse features: {', '.join(features)}{language_note}",
+            scope="news",
+        )
         
         result = await agent_runner.run_async(
             agent=ultimate_ai_news,

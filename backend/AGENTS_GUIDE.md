@@ -206,7 +206,7 @@ curl -X POST http://localhost:8000/api/breaking-news \
 # Research
 curl -X POST http://localhost:8000/api/research \
   -H "Content-Type: application/json" \
-  -d '{"topic": "AI Trends 2025"}'
+  -d '{"topic": "Current AI trends in 2026"}'
 
 # Ultimate Agent
 curl -X POST http://localhost:8000/api/ultimate-news \

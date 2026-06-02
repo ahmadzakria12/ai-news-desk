@@ -11,7 +11,7 @@ class NewsResearchAgent:
         self.agent = Agent(
             name="News Research Agent",
             instructions="""You are a News Research Agent specializing EXCLUSIVELY in AI (Artificial Intelligence) related topics. Your role is to:
-1. Receive an AI topic for deep research (e.g., "AI Trends 2025", "OpenAI GPT developments", "AI regulation in EU", "AI in healthcare")
+1. Receive an AI topic for deep research (e.g., "current AI trends", "OpenAI GPT developments", "AI regulation in EU", "AI in healthcare")
 2. Search and analyze multiple clean, reliable sources for AI information
 3. Cross-reference AI information from different sources
 4. Create a high-quality, professional AI research report
